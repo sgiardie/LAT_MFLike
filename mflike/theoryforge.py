@@ -4,7 +4,6 @@ from itertools import product
 import numpy as np
 from cobaya.log import LoggedError
 
-
 # Converts from cmb temperature to differential source intensity
 # (see eq. 8 of https://arxiv.org/abs/1303.5070).
 # The bandpass transmission needs to be divided by
@@ -53,12 +52,24 @@ class TheoryForge:
             self.expected_params_nuis = mflike.expected_params_nuis
             self.spec_meta = mflike.spec_meta
             self.defaults_cuts = mflike.defaults
-            self.ppol_dict = mflike.ppol_dict
             #reading all the pol combinations we have in our data
             self.pols = []
             for m in self.spec_meta:
                 if m['pol'] not in self.pols:
                     self.pols.append(m['pol'])
+            
+            self.ppol_dict = {
+                "TT": "tt",
+                "EE": "ee",
+                "TE": "te",
+                "ET": "te",
+                "BB": "bb",
+                "EB": "eb",
+                "BE": "eb",
+                "TB": "tb",
+                "BT": "tb",
+                "BB": "bb",
+            }   
       
             # Initialize foreground model
             self._init_foreground_model()
@@ -86,6 +97,7 @@ class TheoryForge:
                     raise LoggedError(
                         self.log, "One band has width = 0, set a positive width and run again"
                     )
+
 
     # Takes care of the bandpass construction. It returns a list of nu-transmittance
     # for each frequency or an array with the effective freqs.
@@ -145,7 +157,7 @@ class TheoryForge:
     def get_modified_theory(self, Dls, **params):
         fg_params = {k: params[k] for k in self.expected_params_fg}
         nuis_params = {k: params[k] for k in self.expected_params_nuis}
-
+        
         # compute bandpasses at each step only if bandint_shift params are not null
         # and bandint_freqs has been computed at least once
         if np.all(
@@ -271,11 +283,11 @@ class TheoryForge:
                 "temp": fg_params["T_d"],
                 "beta": fg_params["beta_p"],
             },
-            {"ell": ell_clp, "ell_0": ell_0clp, "alpha": 1},
+            {"ell": ell_clp, "ell_0": ell_0clp, "alpha": fg_params["alpha_p"]},
         )
         model["tt", "radio"] = fg_params["a_s"] * self.radio(
-            {"nu": self.bandint_freqs, "nu_0": nu_0, "beta": -0.5 - 2.0},
-            {"ell": ell_clp, "ell_0": ell_0clp, "alpha": 1},
+            {"nu": self.bandint_freqs, "nu_0": nu_0, "beta": fg_params["beta_s"]},
+            {"ell": ell_clp, "ell_0": ell_0clp, "alpha": fg_params["alpha_s"]},
         )
         model["tt", "tSZ"] = fg_params["a_tSZ"] * self.tsz(
             {"nu": self.bandint_freqs, "nu_0": nu_0},
@@ -291,8 +303,9 @@ class TheoryForge:
             {"ell": ell, "ell_0": ell_0},
         )
         model["tt", "dust"] = fg_params["a_gtt"] * self.dust(
-            {"nu": self.bandint_freqs, "nu_0": nu_0, "temp": 19.6, "beta": 1.5},
-            {"ell": ell, "ell_0": 500.0, "alpha": -0.6},
+            {"nu": self.bandint_freqs, "nu_0": nu_0, 
+             "temp": fg_params["T_effd"], "beta": fg_params["beta_d"]},
+            {"ell": ell, "ell_0": 500.0, "alpha": fg_params["alpha_dT"]},
         )
         model["tt", "tSZ_and_CIB"] = self.tSZ_and_CIB(
             {
@@ -320,21 +333,23 @@ class TheoryForge:
         )
 
         model["ee", "radio"] = fg_params["a_psee"] * self.radio(
-            {"nu": self.bandint_freqs, "nu_0": nu_0, "beta": -0.5 - 2.0},
-            {"ell": ell_clp, "ell_0": ell_0clp, "alpha": 1},
+            {"nu": self.bandint_freqs, "nu_0": nu_0, "beta": fg_params["beta_s"]},
+            {"ell": ell_clp, "ell_0": ell_0clp, "alpha": fg_params["alpha_s"]},
         )
         model["ee", "dust"] = fg_params["a_gee"] * self.dust(
-            {"nu": self.bandint_freqs, "nu_0": nu_0, "temp": 19.6, "beta": 1.5},
-            {"ell": ell, "ell_0": 500.0, "alpha": -0.4},
+            {"nu": self.bandint_freqs, "nu_0": nu_0, 
+             "temp": fg_params["T_effd"], "beta": fg_params["beta_d"]},
+            {"ell": ell, "ell_0": 500.0, "alpha": fg_params["alpha_dE"]},
         )
 
         model["te", "radio"] = fg_params["a_pste"] * self.radio(
-            {"nu": self.bandint_freqs, "nu_0": nu_0, "beta": -0.5 - 2.0},
-            {"ell": ell_clp, "ell_0": ell_0clp, "alpha": 1},
+            {"nu": self.bandint_freqs, "nu_0": nu_0, "beta": fg_params["beta_s"]},
+            {"ell": ell_clp, "ell_0": ell_0clp, "alpha": fg_params["alpha_s"]},
         )
         model["te", "dust"] = fg_params["a_gte"] * self.dust(
-            {"nu": self.bandint_freqs, "nu_0": nu_0, "temp": 19.6, "beta": 1.5},
-            {"ell": ell, "ell_0": 500.0, "alpha": -0.4},
+            {"nu": self.bandint_freqs, "nu_0": nu_0, 
+             "temp": fg_params["T_effd"], "beta": fg_params["beta_d"]},
+            {"ell": ell, "ell_0": 500.0, "alpha": fg_params["alpha_dE"]},
         )
 
         fg_dict = {}
@@ -374,10 +389,12 @@ class TheoryForge:
     def _get_calibrated_spectra(self, dls_dict, **nuis_params):
         from syslibrary import syslib_mflike as syl
 
+        #allowing for not having calT_{exp} in the yaml
+
         cal_pars = {}
         if "tt" in self.requested_cls or "te" in self.requested_cls:
             cal = nuis_params["calG_all"] * np.array(
-                [nuis_params[f"cal_{exp}"] * nuis_params[f"calT_{exp}"] for exp in self.experiments]
+                [nuis_params[f"cal_{exp}"] * nuis_params.get(f"calT_{exp}",1) for exp in self.experiments]
             )
             cal_pars["T"] = 1 / cal
 
@@ -399,7 +416,9 @@ class TheoryForge:
     def _get_rotated_spectra(self, dls_dict, **nuis_params):
         from syslibrary import syslib_mflike as syl
 
-        rot_pars = [nuis_params[f"alpha_{exp}"] for exp in self.experiments]
+        #allowing for not having polarization angles in the yaml
+
+        rot_pars = [nuis_params.get(f"alpha_{exp}", 0) for exp in self.experiments]
 
         rot = syl.Rotation_alm(ell=self.l_bpws, spectra=dls_dict)
 
