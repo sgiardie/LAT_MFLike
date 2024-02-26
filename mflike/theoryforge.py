@@ -180,9 +180,11 @@ class TheoryForge:
                 # needed for theory and foreground spectra, that don't
                 # distinguish between cross spectra
                 s = self.ppol_dict[p]
-                cmbfg_dict[p, exp1, exp2] = Dls[s] + fg_dict[s, "all", exp1, exp2]
+                # not filling ET if exp1 = exp2
+                if not (p == "ET" and exp1 == exp2):
+                    cmbfg_dict[p, exp1, exp2] = Dls[s] + fg_dict[s, "all", exp1, exp2]
                 # computing the ET spectrum in the case with symmetrization
-                if p == "TE" and self.defaults_cuts["symmetrize"]:
+                if p == "TE" and self.defaults_cuts["symmetrize"] and exp1 != exp2:
                     cmbfg_dict["ET", exp1, exp2] = Dls[s] + fg_dict[s, "all", exp1, exp2]
 
         # Apply alm based calibration factors
@@ -195,7 +197,6 @@ class TheoryForge:
         if self.use_systematics_template:
             cmbfg_dict = self._get_template_from_file(cmbfg_dict, **nuis_params)
 
-        
         # Building the theory spectra selecting only the pol and exp combinations
         # presented in the yaml
         dls_dict = {}
@@ -210,23 +211,7 @@ class TheoryForge:
                 dls_dict[p, m["t1"], m["t2"]] += cmbfg_dict["ET", m["t1"], m["t2"]]
                 dls_dict[p, m["t1"], m["t2"]] *= 0.5
 
-
-#            if p in ["tt", "ee", "bb"]:
-#                dls_dict[p, m["t1"], m["t2"]] = cmbfg_dict[p, m["t1"], m["t2"]]
-#            else:  # ['te','tb','eb']
-#                if m["hasYX_xsp"]:  # case with symmetrize = False and ET/BT/BE spectra
-#                    dls_dict[p, m["t2"], m["t1"]] = cmbfg_dict[p, m["t2"], m["t1"]]
-#                else: # case of TE/TB/EB spectra, or symmetrize = True
-#                    dls_dict[p, m["t1"], m["t2"]] = cmbfg_dict[p, m["t1"], m["t2"]]
-#
-#                # if symmetrize = True, dls_dict has already been set 
-#                # equal to cmbfg_dict[p, m["t1"], m["t2"]
-#                # now we add cmbfg_dict[p, m["t2"], m["t1"] and we average them
-#                # as we do for our data
-#                if self.defaults_cuts["symmetrize"]:  
-#                    dls_dict[p, m["t1"], m["t2"]] += cmbfg_dict[p, m["t2"], m["t1"]]
-#                    dls_dict[p, m["t1"], m["t2"]] *= 0.5
-
+         
         return dls_dict
 
     ###########################################################################
