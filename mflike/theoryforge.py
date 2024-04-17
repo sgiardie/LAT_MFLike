@@ -137,7 +137,25 @@ class TheoryForge:
             self.expected_params_nuis = mflike.expected_params_nuis
             self.spec_meta = mflike.spec_meta
             self.defaults_cuts = mflike.defaults
-
+            #reading all the pol combinations we have in our data
+            self.pols = []
+            for m in self.spec_meta:
+                if m['pol'] not in self.pols:
+                    self.pols.append(m['pol'])
+            
+            self.ppol_dict = {
+                "TT": "tt",
+                "EE": "ee",
+                "TE": "te",
+                "ET": "te",
+                "BB": "bb",
+                "EB": "eb",
+                "BE": "eb",
+                "TB": "tb",
+                "BT": "tb",
+                "BB": "bb",
+            }   
+      
             # Initialize foreground model
             self._init_foreground_model()
 
@@ -271,9 +289,19 @@ class TheoryForge:
 
         cmbfg_dict = {}
         # Sum CMB and FGs
+        # filling all the array combinations, also the one not present in the yaml
         for exp1, exp2 in product(self.experiments, self.experiments):
-            for s in self.requested_cls:
-                cmbfg_dict[s, exp1, exp2] = Dls[s] + fg_dict[s, "all", exp1, exp2]
+            for p in self.pols:
+                # translating TT/TE/ET/EE... in tt/te/ee..., i.e. keys
+                # needed for theory and foreground spectra, that don't
+                # distinguish between cross spectra
+                s = self.ppol_dict[p]
+                # not filling ET if exp1 = exp2
+                if not (p == "ET" and exp1 == exp2):
+                    cmbfg_dict[p, exp1, exp2] = Dls[s] + fg_dict[s, "all", exp1, exp2]
+                # computing the ET spectrum in the case with symmetrization
+                if p == "TE" and self.defaults_cuts["symmetrize"] and exp1 != exp2:
+                    cmbfg_dict["ET", exp1, exp2] = Dls[s] + fg_dict[s, "all", exp1, exp2]
 
         # Apply alm based calibration factors
         cmbfg_dict = self._get_calibrated_spectra(cmbfg_dict, **nuis_params)
@@ -285,26 +313,21 @@ class TheoryForge:
         if self.use_systematics_template:
             cmbfg_dict = self._get_template_from_file(cmbfg_dict, **nuis_params)
 
-        # Built theory
+        # Building the theory spectra selecting only the pol and exp combinations
+        # presented in the yaml
         dls_dict = {}
         for m in self.spec_meta:
             p = m["pol"]
-            if p in ["tt", "ee", "bb"]:
-                dls_dict[p, m["t1"], m["t2"]] = cmbfg_dict[p, m["t1"], m["t2"]]
-            else:  # ['te','tb','eb']
-                if m["hasYX_xsp"]:  # case with symmetrize = False and ET/BT/BE spectra
-                    dls_dict[p, m["t2"], m["t1"]] = cmbfg_dict[p, m["t2"], m["t1"]]
-                else:  # case of TE/TB/EB spectra, or symmetrize = True
-                    dls_dict[p, m["t1"], m["t2"]] = cmbfg_dict[p, m["t1"], m["t2"]]
+            dls_dict[p, m["t1"], m["t2"]] = cmbfg_dict[p, m["t1"], m["t2"]]
+            # if symmetrize = True, dls_dict has already been set 
+            # equal to cmbfg_dict[TE, m["t1"], m["t2"]]
+            # now we add cmbfg_dict[ET, m["t1"], m["t2"]] and we average them
+            # as we do for our data
+            if p == "TE" and self.defaults_cuts["symmetrize"]:
+                dls_dict[p, m["t1"], m["t2"]] += cmbfg_dict["ET", m["t1"], m["t2"]]
+                dls_dict[p, m["t1"], m["t2"]] *= 0.5
 
-                # if symmetrize = True, dls_dict has already been set
-                # equal to cmbfg_dict[p, m["t1"], m["t2"]
-                # now we add cmbfg_dict[p, m["t2"], m["t1"] and we average them
-                # as we do for our data
-                if self.defaults_cuts["symmetrize"]:
-                    dls_dict[p, m["t1"], m["t2"]] += cmbfg_dict[p, m["t2"], m["t1"]]
-                    dls_dict[p, m["t1"], m["t2"]] *= 0.5
-
+         
         return dls_dict
 
     ###########################################################################
@@ -538,13 +561,13 @@ class TheoryForge:
                     for exp in self.experiments
                 ]
             )
-            cal_pars["t"] = 1 / cal
+            cal_pars["T"] = 1 / cal
 
         if "ee" in self.requested_cls or "te" in self.requested_cls:
             cal = nuis_params["calG_all"] * np.array(
                 [nuis_params[f"cal_{exp}"] * nuis_params[f"calE_{exp}"] for exp in self.experiments]
             )
-            cal_pars["e"] = 1 / cal
+            cal_pars["E"] = 1 / cal
 
         calib = syl.Calibration_alm(ell=self.l_bpws, spectra=dls_dict)
 
@@ -582,7 +605,7 @@ class TheoryForge:
 
         rot = syl.Rotation_alm(ell=self.l_bpws, spectra=dls_dict)
 
-        return rot(rot_pars, nu=self.experiments, cls=self.requested_cls)
+        return rot(rot_pars, nu=self.experiments)
 
     ###########################################################################
     ## This part deals with template marginalization
@@ -621,12 +644,15 @@ class TheoryForge:
         # templ_pars=[nuis_params['templ_'+str(exp)] for exp in self.experiments]
         # templ_pars currently hard-coded
         # but ideally should be passed as input nuisance
+         
+
+        # finding the list of all polarization combinations
         templ_pars = {
             cls: np.zeros((len(self.experiments), len(self.experiments)))
-            for cls in self.requested_cls
+            for cls in self.pols
         }
 
-        for cls in self.requested_cls:
+        for cls in self.pols:
             for i1, exp1 in enumerate(self.experiments):
                 for i2, exp2 in enumerate(self.experiments):
                     dls_dict[cls, exp1, exp2] += (

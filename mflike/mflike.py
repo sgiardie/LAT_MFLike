@@ -223,18 +223,6 @@ class MFLike(InstallableLikelihood):
 
         # Translation betwen TEB and sacc C_ell types
         pol_dict = {"T": "0", "E": "e", "B": "b"}
-        ppol_dict = {
-            "TT": "tt",
-            "EE": "ee",
-            "TE": "te",
-            "ET": "te",
-            "BB": "bb",
-            "EB": "eb",
-            "BE": "eb",
-            "TB": "tb",
-            "BT": "tb",
-            "BB": "bb",
-        }
 
         def get_cl_meta(spec):
             """
@@ -404,9 +392,9 @@ class MFLike(InstallableLikelihood):
                 self.spec_meta.append(
                     {
                         "ids": (index_sofar + np.arange(cls.size, dtype=int)),
-                        "pol": ppol_dict[pol],
-                        # this flag is true for pol = ET, BE, BT
-                        "hasYX_xsp": pol in ["ET", "BE", "BT"],
+                        "pol": pol,
+                       # "hasYX_xsp": pol        # this flag is true for pol = ET, BE, BT
+                       # in ["ET", "BE", "BT"],  
                         "t1": exp_1,
                         "t2": exp_2,
                         "leff": ls,  #
@@ -458,12 +446,8 @@ class MFLike(InstallableLikelihood):
             p = m["pol"]
             i = m["ids"]
             w = m["bpw"].weight.T
-            # If symmetrize = False, the (ET, exp1, exp2) spectrum
-            # will have the flag m["hasYX_xsp"] = True.
-            # In this case, the power spectrum
-            # is computed as DlsObs["te", m["t2"], m["t1"]], to associate
-            # T --> exp2, E --> exp1
-            dls_obs = DlsObs[p, m["t2"], m["t1"]] if m["hasYX_xsp"] else DlsObs[p, m["t1"], m["t2"]]
+            dls_obs = DlsObs[p, m["t1"], m["t2"]]
+            #if m["hasYX_xsp"]: dls_obs = DlsObs[p, m["t2"], m["t1"]]
             clt = w @ dls_obs
             ps_vec[i] = clt
 
