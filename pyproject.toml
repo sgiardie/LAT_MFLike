@@ -24,7 +24,8 @@ classifiers = [
 ]
 requires-python = ">=3.9.0"
 dependencies = [
-  "fgspectra>=1.3.0",
+ # "fgspectra>=1.3.0",
+  "fgspectra@git+https://github.com/sgiardie/fgspectra@ksz-cosmo", 
   "syslibrary>=0.2.0",
   "cobaya>=3.5.4",
   "sacc>=0.9.0",
